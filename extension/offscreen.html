@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>udio-dl offscreen</title>
+</head>
+<body>
+<!-- Офскрин-документ: здесь живёт захват звука вкладки (tabCapture -> getUserMedia),
+     сбор PCM в AudioWorklet и кодирование lamejs. Отдельная лёгкая страница
+     расширения — главный поток страницы udio.com её не разгружает. -->
+<script src="lib/lame.min.js"></script>
+<script src="offscreen.js"></script>
+</body>
+</html>

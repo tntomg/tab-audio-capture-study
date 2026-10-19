@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Tab Audio Capture Study",
+  "version": "2.0.0",
+  "minimum_chrome_version": "116",
+  "description": "Educational PoC: records a tab's audio via the documented chrome.tabCapture API and encodes it in-browser (MP3/WAV, ID3 tags). A study of browser-side DRM audio delivery — no DRM circumvention. UI: English/Russian.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Tab Audio Capture Study"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["tabCapture", "offscreen", "downloads", "storage", "activeTab"],
+  "content_scripts": [
+    {
+      "matches": ["https://www.udio.com/*", "https://udio.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

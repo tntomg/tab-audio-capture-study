@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Udio Downloader</title>
+<style>
+  body {
+    width: 340px;
+    margin: 0;
+    font: 13px/1.45 system-ui, 'Segoe UI', sans-serif;
+    color: #1f2937;
+    background: #fafafa;
+  }
+  .wrap { padding: 14px; }
+  h1 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #4c1d95;
+  }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #9ca3af; display: inline-block; flex: none;
+  }
+  .dot.rec { background: #dc2626; animation: pulse 1.2s infinite; }
+  .dot.enc { background: #d97706; animation: pulse 0.6s infinite; }
+  .dot.ok  { background: #16a34a; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .lang { margin-left: auto; display: flex; gap: 4px; }
+  .langbtn {
+    width: auto; margin: 0; padding: 2px 8px;
+    border: 0; border-radius: 5px;
+    background: #e5e7eb; color: #374151;
+    font: 600 10px/1.4 inherit; cursor: pointer;
+  }
+  .langbtn:hover { background: #d1d5db; }
+  .langbtn.active { background: #7c3aed; color: #fff; }
+  .status {
+    background: #f3e8ff;
+    border: 1px solid #ddd6fe;
+    border-radius: 8px;
+    padding: 9px 11px;
+    margin-bottom: 10px;
+    white-space: pre-line;
+  }
+  label { display: block; font-size: 11px; color: #6b7280; margin: 8px 0 3px; }
+  input[type=text] {
+    width: 100%; box-sizing: border-box;
+    padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px;
+    font: inherit; background: #fff;
+  }
+  button {
+    width: 100%; margin-top: 10px;
+    padding: 9px 10px; border: 0; border-radius: 8px;
+    background: #7c3aed; color: #fff; font: 600 13px inherit;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #6d28d9; }
+  button.secondary { background: #e5e7eb; color: #374151; }
+  button.secondary:hover:not(:disabled) { background: #d1d5db; }
+  button.danger { background: #dc2626; }
+  button.danger:hover:not(:disabled) { background: #b91c1c; }
+  button:disabled { opacity: .55; cursor: default; }
+  .row {
+    display: flex; align-items: center; gap: 7px;
+    margin-top: 11px; font-size: 12px; color: #4b5563;
+  }
+  .fmt {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 12px; padding: 7px 9px;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+    font-size: 12px; color: #374151;
+  }
+  .fmt-label { color: #6b7280; font-size: 11px; }
+  .fmt-opt { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .fmt-opt input { margin: 0; accent-color: #7c3aed; }
+  .hint { margin-top: 10px; font-size: 11px; color: #9ca3af; }
+  .err { color: #b91c1c; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>
+    <span class="dot" id="dot"></span>Tab Audio Capture
+    <span class="lang">
+      <button id="langEn" class="langbtn active" title="English">EN</button>
+      <button id="langRu" class="langbtn" title="Русский">RU</button>
+    </span>
+  </h1>
+  <div class="status" id="status" data-i18n="checking">Checking page…</div>
+
+  <label for="artist" data-i18n="artist">Artist</label>
+  <input type="text" id="artist" placeholder="t1tanium">
+  <label for="title" data-i18n="title">Title</label>
+  <input type="text" id="title" placeholder="3rd September flames">
+
+  <div class="fmt">
+    <span class="fmt-label" data-i18n="format">Format:</span>
+    <label class="fmt-opt"><input type="radio" name="fmt" value="mp3" checked> MP3 · 320 kbps</label>
+    <label class="fmt-opt"><input type="radio" name="fmt" value="wav"> <span data-i18n="wavOpt">WAV · lossless</span></label>
+  </div>
+
+  <button id="restart" data-i18n="btnRestart">↻ Record song from start (auto-save)</button>
+  <button id="record" class="secondary" data-i18n="btnRecord">● Record from current position</button>
+  <button id="stop" class="danger" style="display:none" data-i18n="btnStop">⏹ Stop recording</button>
+  <button id="save" class="secondary" data-i18n="btnSave">💾 Save last recording</button>
+
+  <div class="row">
+    <input type="checkbox" id="autoSave">
+    <label for="autoSave" style="margin:0" data-i18n="autoSave">Auto-save (current-position mode)</label>
+  </div>
+
+  <div class="hint" id="hint" data-i18n="hint">
+    Recording happens at the browser level (tabCapture): no DRM blocks, no
+    crackle, speakers play as usual. Player hiccups/pauses longer than 1.5 s
+    are cut from the file automatically. While recording, the tab is marked
+    with a “recording” icon. Don't mute the player or close the tab.
+  </div>
+</div>
+<script src="popup.js"></script>
+</body>
+</html>

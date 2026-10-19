@@ -1,0 +1,19 @@
+# Recorded media and personal study outputs — never publish
+song/
+*.mp3
+*.wav
+*.m4a
+*.flac
+
+# One-off capture pipeline from the research phase (not part of the PoC)
+scripts/
+
+# Extension dev artifacts
+extension/dev-tools/test_output.*
+extension/dev-tools/chrome-test-profile/
+*.log
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
