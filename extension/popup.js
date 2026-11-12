@@ -189,24 +189,33 @@ function render(st) {
   }
 }
 
+// Что показывать в полях «Исполнитель/Название». После остановки записи
+// главное — снимок трека, который записывали (storedMeta): страница к этому
+// моменту уже может показывать следующий трек (Suno переключает очередь).
+function displayMeta(st) {
+  if (st.storedMeta && (st.last || !st.pageMeta)) return st.storedMeta;
+  return st.pageMeta || st.storedMeta || null;
+}
+
 async function refresh() {
   const st = await send({ type: 'status' });
   lastStatus = st;
   if (st.ok) {
     if (!$('autoTitle').dataset.touched) $('autoTitle').checked = st.autoTitle !== false;
     const autoTitle = st.autoTitle !== false;
+    const pm = displayMeta(st);
     $('artist').readOnly = autoTitle;
     $('title').readOnly = autoTitle;
     if (autoTitle) {
       // авто-режим: поля всегда показывают имя трека, распарсенное из HTML страницы
-      $('artist').value = (st.pageMeta && st.pageMeta.artist) || '';
-      $('title').value = (st.pageMeta && st.pageMeta.title) || '';
+      $('artist').value = (pm && pm.artist) || '';
+      $('title').value = (pm && pm.title) || '';
     } else {
       if (document.activeElement !== $('artist') && !$('artist').dataset.touched) {
-        $('artist').value = (st.pageMeta && st.pageMeta.artist) || '';
+        $('artist').value = (pm && pm.artist) || '';
       }
       if (document.activeElement !== $('title') && !$('title').dataset.touched) {
-        $('title').value = (st.pageMeta && st.pageMeta.title) || '';
+        $('title').value = (pm && pm.title) || '';
       }
     }
     if (!$('autoSave').dataset.touched) $('autoSave').checked = !!st.autoSave;
@@ -308,11 +317,15 @@ $('save').addEventListener('click', async () => {
   const status = $('status');
   status.className = 'status';
   status.textContent = L('encodingDots');
-  const r = await send({
-    type: 'save',
-    meta: { artist: $('artist').value, title: $('title').value },
-    format,
-  });
+  // В авто-режиме поля — лишь отображение; отправляем их, только если
+  // пользователь реально ввёл название (ручной режим). Иначе автозаполненные
+  // значения (а после 'ended' страница может показывать уже следующий трек)
+  // перекрыли бы снимок метаданных, сделанный на старте записи.
+  const auto = !(lastStatus && lastStatus.autoTitle === false);
+  const touched = $('artist').dataset.touched || $('title').dataset.touched;
+  const meta = (auto && !touched) ? null
+    : { artist: $('artist').value, title: $('title').value };
+  const r = await send({ type: 'save', meta, format });
   if (r && r.ok) {
     status.className = 'status';
     status.textContent = L('saved') + r.name + ' (' +

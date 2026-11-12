@@ -114,6 +114,40 @@ async function setBadge(mode) {
   } catch (e) { /* ignore */ }
 }
 
+// ---------- метаданные трека ----------
+// Метаданные нужны в момент СОХРАНЕНИЯ, но к этому времени страница уже может
+// показывать другой трек (Suno сам переключает очередь после 'ended'), быть
+// перезагруженной или вообще недоступной. Поэтому снимок «что записываем»
+// делается на старте записи и хранится в chrome.storage.session (переживает
+// перезапуск service worker).
+
+// «Качество» метаданных: разобранные из данных страницы/Media Session выше
+// запасного варианта из document.title (parsed:false), у которого название
+// часто вырождается в "song"/"recording".
+function metaScore(m) {
+  if (!m) return -1;
+  let s = 0;
+  if (m.parsed) s += 4;
+  if (m.title && !/^(song|recording)$/i.test(m.title)) s += 2;
+  if (m.artist && !/^(tab|udio|suno)$/i.test(m.artist)) s += 1;
+  if (m.uuid) s += 1;
+  return s;
+}
+
+// a — снимок со старта записи (главный), b — то, что страница отдаёт сейчас.
+// Разные uuid — запись идёт про трек, который был на старте: страница уже
+// уехала на следующий, её данные не подходят.
+function pickMeta(a, b) {
+  if (!a) return b || null;
+  if (!b) return a;
+  if (a.uuid && b.uuid && a.uuid !== b.uuid) return a;
+  return metaScore(b) > metaScore(a) ? b : a;
+}
+
+function sameTrack(a, b) {
+  return !(a && b && a.uuid && b.uuid && a.uuid !== b.uuid);
+}
+
 // ---------- запись ----------
 
 async function startRecording(tabId, mode) {
@@ -148,11 +182,21 @@ async function startRecording(tabId, mode) {
   const r = await sendToOffscreen({ type: 'start-recording', data: streamId });
   if (!r || r.ok === false) return r;
 
-  await setState({ capturing: true, tabId, mode, startedAt: Date.now(), savedThisRun: false });
+  // состояние фиксируем ДО сообщения content script: иначе 'ended', пришедший
+  // сразу после recording-started, увидит capturing:false и файл не сохранится
+  await setState({
+    capturing: true, tabId, mode, startedAt: Date.now(), savedThisRun: false, trackMeta: null,
+  });
   await setBadge('rec');
   // content script начинает слышать 'ended' и защищать хвост записи
-  // от автоперехода к следующему треку (Suno)
-  await tabsSend(tabId, { type: 'recording-started' });
+  // от автоперехода к следующему треку (Suno); его ответ — снимок метаданных
+  // трека прямо сейчас, сохраняем его на весь проход записи
+  const snap = await tabsSend(tabId, { type: 'recording-started' });
+  const trackMeta = (snap && snap.meta) || null;
+  if (trackMeta) {
+    console.log('[udio-dl-sw] снимок метаданных:', trackMeta.artist + ' - ' + trackMeta.title);
+    await setState({ trackMeta });
+  }
 
   if (mode === 'restart') {
     // 3) сбрасываем буфер (страховка от хвостов) и запускаем воспроизведение
@@ -192,18 +236,29 @@ async function savePipeline(opts, auto) {
   const format = (opts && (opts.format === 'wav' || opts.format === 'mp3'))
     ? opts.format : prefs.format;
 
-  // метаданные со страницы (content script, same-origin fetch)
-  let meta = null;
+  // 1) снимок метаданных, сделанный на старте записи (главный источник)
+  let meta = st.trackMeta || null;
+  // 2) что страница отдаёт сейчас — может быть уже следующим треком, поэтому
+  //    только дополняет снимок, а не заменяет его
+  let liveMeta = null;
   let coverB64 = null;
   if (st.tabId != null) {
     const m = await tabsSend(st.tabId, { type: 'get-meta' });
-    if (m && m.ok && m.meta) {
-      meta = m.meta;
-      if (meta.image) {
-        const c = await tabsSend(st.tabId, { type: 'get-cover', url: meta.image });
-        if (c && c.ok) coverB64 = c.b64 || null;
-      }
-    }
+    if (m && m.ok && m.meta) liveMeta = m.meta;
+  }
+  meta = pickMeta(meta, liveMeta);
+  // обложка: у снимка её может не быть (Media Session без artwork) — берём
+  // у живой страницы, если это тот же трек
+  if (meta && !meta.image && liveMeta && liveMeta.image && sameTrack(meta, liveMeta)) {
+    meta = Object.assign({}, meta, { image: liveMeta.image });
+  }
+  if (meta && meta.image && st.tabId != null) {
+    const c = await tabsSend(st.tabId, { type: 'get-cover', url: meta.image });
+    if (c && c.ok) coverB64 = c.b64 || null;
+  }
+  if (meta) {
+    console.log('[udio-dl-sw] метаданные для файла:', meta.artist + ' - ' + meta.title,
+      '(parsed=' + !!meta.parsed + ')');
   }
 
   // автор/название из popup: в авто-режиме главнее данные страницы,
@@ -292,6 +347,12 @@ safeListener(chrome.runtime, 'onMessage', (msg, sender, sendResponse) => {
         if (msg.type === 'playback-ended') {
           const st = await getState();
           if (st.capturing && st.tabId === sender.tab.id) {
+            // снимок метаданных вместе с событием: даже если service worker
+            // успел выгрузиться с момента старта, название записанной песни
+            // не потеряется
+            if (msg.meta && msg.meta.parsed) {
+              await setState({ trackMeta: pickMeta(st.trackMeta, msg.meta) });
+            }
             await stopRecording('song-ended');
             // глушим автоплей плеера после конца записанной песни
             // (ДО автосейва — кодирование занимает секунды)
@@ -395,6 +456,7 @@ async function status() {
     autoSave: prefs.autoSave,
     autoTitle: prefs.autoTitle,
     pageMeta: content.meta || null,
+    storedMeta: st.trackMeta || null, // снимок со старта записи (если идёт запись)
     playback: content.playback || null,
     songPage: content.songPage !== false,
     hasAudio: !!content.hasAudio,

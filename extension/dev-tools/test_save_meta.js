@@ -1,7 +1,9 @@
 // test_save_meta.js — проверяет выбор автора/названия при сохранении:
 //   autoTitle=true  -> данные страницы перекрывают ввод popup (и сохранённый ручной);
 //   autoTitle=false -> ввод popup (или сохранённый manualMeta для автосейва)
-//                      перекрывает данные страницы.
+//                      перекрывает данные страницы;
+//   снимок со старта записи НЕ теряется, если к моменту сохранения страница
+//   уехала на следующий трек (Suno) или content script стал недоступен.
 // background.js загружается через new Function с заглушкой chrome API,
 // поэтому тест не требует ни сети, ни реального расширения.
 const fs = require('fs');
@@ -17,11 +19,16 @@ const localStore = {};
 const sessionStore = { rec: { tabId: 1 } };
 const offscreenMsgs = [];
 
-const PAGE_META = { site: 'Suno', artist: 'Page Artist', title: 'Page Song', image: null };
+// что content script отдаёт на get-meta — меняется по ходу теста
+let contentMeta = {
+  site: 'Suno', artist: 'Page Artist', title: 'Page Song', parsed: true, uuid: 'song-page',
+};
+let contentGone = false;
 
 global.chrome = {
   runtime: {
     onMessage: mkEvent('runtime.onMessage'),
+    lastError: null,
     getContexts: async () => [{ contextType: 'OFFSCREEN_DOCUMENT' }],
     sendMessage: (msg, cb) => {
       if (msg && msg.target === 'offscreen') offscreenMsgs.push(msg);
@@ -40,8 +47,15 @@ global.chrome = {
   tabs: {
     onRemoved: mkEvent('tabs.onRemoved'),
     sendMessage: (id, msg, cb) => {
-      if (msg && msg.type === 'get-meta') cb({ ok: true, meta: PAGE_META });
+      if (contentGone) {
+        chrome.runtime.lastError = { message: 'Could not establish connection' };
+        cb();
+        chrome.runtime.lastError = null;
+        return;
+      }
+      if (msg && msg.type === 'get-meta') cb({ ok: true, meta: contentMeta });
       else if (msg && msg.type === 'get-cover') cb({ ok: true, b64: '' });
+      else if (msg && msg.type === 'recording-started') cb({ ok: true, meta: contentMeta });
       else cb({ ok: true });
     },
     query: async () => [{ id: 1 }],
@@ -110,6 +124,27 @@ function check(name, actual, expected) {
   m = lastSave();
   check('auto+autosave: artist со страницы', m && m.meta && m.meta.artist, 'Page Artist');
   check('auto+autosave: title со страницы', m && m.meta && m.meta.title, 'Page Song');
+
+  // 5. Снимок на старте записи; страница уехала на следующий трек
+  contentMeta = { site: 'Suno', artist: 'Real Artist', title: 'Real Song', parsed: true, uuid: 'song-real' };
+  let r = await route({ type: 'start', mode: 'current', tabId: 1 });
+  check('start: запись началась', r && r.ok, true);
+  check('start: снимок в storage', sessionStore.rec.trackMeta &&
+    sessionStore.rec.trackMeta.title, 'Real Song');
+  contentMeta = { site: 'Suno', artist: 'Next Artist', title: 'Next Song', parsed: true, uuid: 'song-next' };
+  await route({ type: 'stop' });
+  await route({ type: 'save', meta: null, format: 'mp3' });
+  m = lastSave();
+  check('next track: artist со старта', m && m.meta && m.meta.artist, 'Real Artist');
+  check('next track: title со старта', m && m.meta && m.meta.title, 'Real Song');
+
+  // 6. К моменту сохранения content script недоступен — снимок всё равно есть
+  contentGone = true;
+  await route({ type: 'save', meta: null, format: 'mp3' });
+  m = lastSave();
+  check('content gone: artist со старта', m && m.meta && m.meta.artist, 'Real Artist');
+  check('content gone: title со старта', m && m.meta && m.meta.title, 'Real Song');
+  contentGone = false;
 
   console.log(failed ? 'SAVE META FAIL: ' + failed : 'SAVE META OK');
   process.exit(failed ? 1 : 0);

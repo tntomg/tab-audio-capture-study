@@ -50,7 +50,7 @@ git clone https://github.com/tntomg/tab-audio-capture-study.git
 3. Открыть popup расширения на любой странице со звуком
 
 UI — английский по умолчанию, переключатель **EN/RU** в заголовке (выбор запоминается).
-Название трека и исполнитель подставляются автоматически из HTML-метаданных страницы (SSR-данные Suno / flight-данные Udio) — и в имя файла, и в теги ID3/WAV. Переключатель **«Название трека со страницы (авто)»** снимается для ручного ввода.
+Название трека и исполнитель подставляются автоматически и попадают в имя файла (`Исполнитель - Название.mp3`) и в теги ID3/WAV. Источники: Media Session («что играет сейчас»), SSR-данные Suno / flight-данные Udio. Снимок метаданных делается **на старте записи** и хранится в `chrome.storage.session`, поэтому автосохранение после `ended` не теряет название, даже если Suno уже переключил очередь на следующий трек или вкладка перезагрузилась. Переключатель **«Название трека со страницы (авто)»** снимается для ручного ввода.
 Диагностика в консоли — префиксы `[udio-dl-*]` (service worker / offscreen / content script).
 
 <details>
@@ -62,8 +62,8 @@ node test_lame.js        # MP3 320 + ID3 → ffprobe-валидный файл
 node test_wav.js         # RIFF/WAVE + LIST INFO
 node test_regex.js       # парсер метаданных Udio (синтетическая страница)
 node test_suno.js        # парсер SSR-данных Suno (self.__next_f, split-чанки)
-node test_save_meta.js   # авто/ручное название: приоритет страницы vs popup
-node test_restart.js     # режим «с начала»: перемотка, play, hold после 'ended'
+node test_save_meta.js   # авто/ручное название + снимок со старта записи (следующий трек / content script недоступен)
+node test_restart.js     # режим «с начала»: перемотка, play, hold после 'ended', Media Session
 node smoke_test_sw.js    # service worker: топ-левел + полный цикл start/stop/save
 ```
 

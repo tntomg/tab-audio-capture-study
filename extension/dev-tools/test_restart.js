@@ -54,6 +54,23 @@ global.MutationObserver = class {
   constructor(fn) { this.fn = fn; }
   observe() {}
 };
+// Media Session: платформа выставляет «что играет сейчас» для системных
+// медиа-контролов; content.js должен предпочитать его SSR/document.title.
+// В Node navigator — геттер только для чтения, поэтому обычное присваивание
+// молча игнорируется в sloppy-режиме: переопределяем свойство явно.
+Object.defineProperty(globalThis, 'navigator', {
+  value: {
+    mediaSession: {
+      metadata: {
+        title: 'Session Song',
+        artist: 'Session Artist',
+        artwork: [{ src: 'https://cdn.example/cover.png' }],
+      },
+    },
+  },
+  configurable: true,
+  writable: true,
+});
 global.chrome = {
   runtime: {
     onMessage: { addListener(fn) { listeners.msg = fn; } },
@@ -77,13 +94,37 @@ function check(name, ok, detail) {
 }
 
 (async () => {
+  // до записи: Media Session главнее document.title (SSR-скриптов в заглушке нет)
+  const before = await route({ type: 'get-meta' });
+  check('get-meta: название из Media Session',
+    before && before.meta && before.meta.title === 'Session Song',
+    before && before.meta && before.meta.title);
+  check('get-meta: исполнитель из Media Session',
+    before && before.meta && before.meta.artist === 'Session Artist',
+    before && before.meta && before.meta.artist);
+
   // запись идёт; песня заканчивается → быстрый стоп + hold
   await route({ type: 'recording-started' });
+
+  // Suno успела перевести очередь на следующий трек — снимок со старта
+  // записи важнее «что показывает страница сейчас»
+  global.navigator.mediaSession.metadata = {
+    title: 'Next Song', artist: 'Next Artist', artwork: [],
+  };
+  const during = await route({ type: 'get-meta' });
+  check('get-meta во время записи: название со старта',
+    during && during.meta && during.meta.title === 'Session Song',
+    during && during.meta && during.meta.title);
+
   audio.dispatch('ended');
   check('ended: быстрый стоп в offscreen',
     offscreenMsgs.some((m) => m.type === 'stop-recording'));
   check('ended: событие в service worker',
     swMsgs.some((m) => m.type === 'playback-ended'));
+  const endedMsg = swMsgs.filter((m) => m.type === 'playback-ended').pop();
+  check('ended: снимок метаданных в событии',
+    endedMsg && endedMsg.meta && endedMsg.meta.title === 'Session Song',
+    endedMsg && endedMsg.meta && endedMsg.meta.title);
 
   // пользователь сразу жмёт «с начала» — hold не должен помешать
   const prep = await route({ type: 'prepare-restart' });

@@ -156,6 +156,25 @@
     return meta;
   }
 
+  // Самый надёжный источник «что играет прямо сейчас» — Media Session:
+  // платформы выставляют его для системных медиа-контролов. Он не зависит
+  // от SSR-разметки и от того, осталась ли страница на /song/<uuid>.
+  function parseMediaSession(site) {
+    try {
+      if (typeof navigator === 'undefined' || !navigator.mediaSession) return null;
+      const md = navigator.mediaSession.metadata;
+      if (!md || !md.title) return null;
+      const art = md.artwork && md.artwork.length ? md.artwork[md.artwork.length - 1] : null;
+      return {
+        site: site === 'suno' ? 'Suno' : site === 'udio' ? 'Udio' : 'Tab',
+        artist: md.artist || '',
+        title: md.title,
+        image: (art && art.src) || null,
+        parsed: true,
+      };
+    } catch (e) { return null; }
+  }
+
   function fallbackMeta(site) {
     // У Suno заголовок вида "<Song> by <Artist> | Suno";
     // у Udio — "<Artist> - <Song>".
@@ -181,18 +200,34 @@
 
   async function getPageTrackMeta() {
     const url = location.href.split('#')[0];
-    if (metaCache.url === url && metaCache.data) return metaCache.data;
     const site = detectSite();
-    let meta = null;
-    try {
-      meta = site === 'suno' ? parseSunoMeta() : await parseUdioMeta();
-    } catch (e) { log('метаданные:', e && e.message); }
-    if (!meta) meta = fallbackMeta(site);
-    // запасной вариант не кэшируем: SSR-данные могут появиться чуть позже
-    if (meta.parsed) {
-      metaCache.url = url;
-      metaCache.data = meta;
+    // SSR-данные кэшируем по URL: при SPA-переходе Suno они относятся уже
+    // к другой странице, а запасной вариант из document.title не кэшируем.
+    let page = metaCache.url === url ? metaCache.data : null;
+    if (!page) {
+      try {
+        page = site === 'suno' ? parseSunoMeta() : await parseUdioMeta();
+      } catch (e) { log('метаданные:', e && e.message); }
+      if (page && page.parsed) {
+        metaCache.url = url;
+        metaCache.data = page;
+      }
     }
+    // Media Session отражает фактически играющий трек и главнее SSR:
+    // в плейлисте/на главной SSR-объект может быть другой песней, а после
+    // 'ended' Suno успевает перевести очередь на следующий трек.
+    const live = parseMediaSession(site);
+    let meta = page;
+    if (live) {
+      meta = Object.assign({}, meta || {}, {
+        site: (meta && meta.site) || live.site,
+        artist: live.artist || (meta && meta.artist) || '',
+        title: live.title || (meta && meta.title) || 'song',
+        image: live.image || (meta && meta.image) || null,
+        parsed: true,
+      });
+    }
+    if (!meta) meta = fallbackMeta(site);
     return meta;
   }
 
@@ -216,6 +251,10 @@
   const watched = new WeakSet();
   let mainEl = null;
   let captureActive = false; // приходит из SW: идёт ли запись
+  // Снимок метаданных на момент старта записи. К моменту сохранения страница
+  // уже может быть на другом треке (автопереход Suno) или перезагружена —
+  // тогда название записанной песни берём отсюда.
+  let recordingMeta = null;
   let holdUntil = 0; // до этого времени глушим автостарт плеера после конца песни
   const HOLD_MS = 5000;
 
@@ -244,9 +283,10 @@
     return els.find(isMainPlayer) || els.find((a) => !isSilentAudio(a)) || null;
   }
 
-  function notify(type) {
+  function notify(type, extra) {
     try {
-      chrome.runtime.sendMessage({ type, from: 'content' }, () => void chrome.runtime.lastError);
+      chrome.runtime.sendMessage(Object.assign({ type, from: 'content' }, extra || {}),
+        () => void chrome.runtime.lastError);
     } catch (e) { /* ignore */ }
   }
 
@@ -289,7 +329,9 @@
           });
       } catch (e) { /* ignore */ }
       // 2) штатная цепочка: SW остановит (noop), продлит hold и сохранит файл
-      notify('playback-ended');
+      //    метаданные — снимок со старта записи: к этому моменту страница
+      //    может уже показывать следующий трек очереди
+      notify('playback-ended', { meta: recordingMeta });
     });
   }
 
@@ -356,7 +398,8 @@
     (async () => {
       try {
         if (msg.type === 'status') {
-          const meta = await getPageTrackMeta();
+          const meta = (captureActive && recordingMeta) ? recordingMeta
+            : await getPageTrackMeta();
           const el = mainEl || findMainAudio();
           sendResponse({
             ok: true,
@@ -372,7 +415,11 @@
             },
           });
         } else if (msg.type === 'get-meta') {
-          sendResponse({ ok: true, meta: await getPageTrackMeta() });
+          // во время записи отдаём снимок со старта: страница могла уйти
+          // на другой трек, а сохраняемый файл — про записанный
+          const meta = (captureActive && recordingMeta) ? recordingMeta
+            : await getPageTrackMeta();
+          sendResponse({ ok: true, meta });
         } else if (msg.type === 'get-cover') {
           sendResponse({ ok: true, b64: await fetchCoverB64(msg.url) });
         } else if (msg.type === 'prepare-restart') {
@@ -381,9 +428,19 @@
           sendResponse(await playNow());
         } else if (msg.type === 'recording-started') {
           captureActive = true;
-          sendResponse({ ok: true });
+          // снимаем метаданные ДО того, как страница успеет уехать на
+          // следующий трек; попадает и в get-meta, и в playback-ended
+          if (msg.meta && msg.meta.parsed) recordingMeta = msg.meta;
+          else {
+            try { recordingMeta = await getPageTrackMeta(); }
+            catch (e) { recordingMeta = null; }
+          }
+          log('снимок метаданных:', recordingMeta &&
+            (recordingMeta.artist + ' - ' + recordingMeta.title));
+          sendResponse({ ok: true, meta: recordingMeta });
         } else if (msg.type === 'recording-stopped') {
           captureActive = false;
+          recordingMeta = null;
           sendResponse({ ok: true });
         } else if (msg.type === 'hold-playback') {
           // SW подтвердил: запись закончилась — глушим автоплей на HOLD_MS
