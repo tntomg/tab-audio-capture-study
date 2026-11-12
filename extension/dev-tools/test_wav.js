@@ -24,7 +24,7 @@ function buildWavInfoChunk(meta) {
   const parts = [];
   if (meta.title) parts.push(wavInfoSub('INAM', meta.title));
   if (meta.artist) parts.push(wavInfoSub('IART', meta.artist));
-  parts.push(wavInfoSub('IPRD', 'Udio'));
+  parts.push(wavInfoSub('IPRD', meta.site || 'Tab capture'));
   let body = 4;
   for (const p of parts) body += p.length;
   const chunk = new Uint8Array(8 + body);

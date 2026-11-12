@@ -58,7 +58,7 @@ function buildId3(meta, cover) {
   const frames = [];
   if (meta.title) frames.push(textFrame('TIT2', meta.title));
   if (meta.artist) frames.push(textFrame('TPE1', meta.artist));
-  frames.push(textFrame('TALB', 'Udio'));
+  frames.push(textFrame('TALB', meta.site || 'Tab capture'));
   const body = (function concat(arrs) {
     let n = 0; for (const a of arrs) n += a.length;
     const out = new Uint8Array(n); let o = 0;

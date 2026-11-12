@@ -288,12 +288,17 @@
     return out;
   }
 
+  // альбом/лейбл-поле: площадка, с которой сделана запись
+  function albumName(meta) {
+    return (meta && (meta.site || meta.album)) || 'Tab capture';
+  }
+
   function buildWavInfoChunk(meta) {
     if (!meta) return new Uint8Array(0);
     const parts = [];
     if (meta.title) parts.push(wavInfoSub('INAM', meta.title));
     if (meta.artist) parts.push(wavInfoSub('IART', meta.artist));
-    parts.push(wavInfoSub('IPRD', 'Udio'));
+    parts.push(wavInfoSub('IPRD', albumName(meta)));
     if (meta.published) parts.push(wavInfoSub('ICRD', String(meta.published).slice(0, 4)));
     let body = 4;
     for (const p of parts) body += p.length;
@@ -375,9 +380,9 @@
     const frames = [];
     if (meta.title) frames.push(textFrame('TIT2', meta.title));
     if (meta.artist) frames.push(textFrame('TPE1', meta.artist));
-    frames.push(textFrame('TALB', 'Udio'));
+    frames.push(textFrame('TALB', albumName(meta)));
     if (meta.published) frames.push(textFrame('TYER', String(meta.published).slice(0, 4)));
-    frames.push(textFrame('TCON', 'Udio'));
+    frames.push(textFrame('TCON', meta.genre || albumName(meta)));
     if (meta.lyrics) {
       const desc = u16le('');
       const text = u16le(String(meta.lyrics).slice(0, 4000));

@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Tab Audio Capture Study",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "minimum_chrome_version": "116",
-  "description": "Educational PoC: records a tab's audio via the documented chrome.tabCapture API and encodes it in-browser (MP3/WAV, ID3 tags). A study of browser-side DRM audio delivery — no DRM circumvention. UI: English/Russian.",
+  "description": "Educational PoC: records a tab's audio via the documented chrome.tabCapture API and encodes it in-browser (MP3/WAV, ID3 tags). Udio/Suno adapters for metadata and player events; no DRM circumvention. UI: English/Russian.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -19,7 +19,12 @@
   "permissions": ["tabCapture", "offscreen", "downloads", "storage", "activeTab"],
   "content_scripts": [
     {
-      "matches": ["https://www.udio.com/*", "https://udio.com/*"],
+      "matches": [
+        "https://www.udio.com/*",
+        "https://udio.com/*",
+        "https://suno.com/*",
+        "https://www.suno.com/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle",
       "all_frames": false

@@ -1,8 +1,8 @@
-// background.js — service worker Udio Song Downloader v2.
+// background.js — service worker Tab Audio Capture Study v2.
 // Оркестрация: popup (жест пользователя) -> tabCapture.getMediaStreamId ->
 // offscreen-документ (захват PCM в AudioWorklet + lamejs) -> chrome.downloads.
-// Content script на udio.com — только пассивный наблюдатель (метаданные,
-// события play/ended плеера). Звук страницы расширением не перенаправляется.
+// Content script на udio.com / suno.com — только пассивный наблюдатель
+// (метаданные, события play/ended плеера). Звук страницы не перенаправляется.
 
 const OFFSCREEN_URL = 'offscreen.html';
 const pending = new Map(); // downloadId -> blobUrl
@@ -43,7 +43,7 @@ async function ensureOffscreen() {
     await chrome.offscreen.createDocument({
       url: OFFSCREEN_URL,
       reasons: ['USER_MEDIA'],
-      justification: 'Запись звука вкладки udio.com (tabCapture) и кодирование в MP3/WAV',
+      justification: 'Запись звука вкладки (tabCapture) и кодирование в MP3/WAV',
     });
   } catch (e) {
     // уже создан другим вызовом — не страшно
@@ -133,6 +133,9 @@ async function startRecording(tabId, mode) {
 
   await setState({ capturing: true, tabId, mode, startedAt: Date.now(), savedThisRun: false });
   await setBadge('rec');
+  // content script начинает слышать 'ended' и защищать хвост записи
+  // от автоперехода к следующему треку (Suno)
+  await tabsSend(tabId, { type: 'recording-started' });
 
   if (mode === 'restart') {
     // 3) сбрасываем буфер (страховка от хвостов) и запускаем воспроизведение
@@ -147,6 +150,8 @@ async function stopRecording(reason) {
   const r = await sendToOffscreen({ type: 'stop-recording' });
   await setState({ capturing: false, stopReason: reason || '', stoppedAt: Date.now() });
   await setBadge('');
+  // снимаем captureActive в content script (Suno: разрешаем автостарт снова)
+  if (st.tabId != null) tabsSend(st.tabId, { type: 'recording-stopped' });
   return r;
 }
 
@@ -238,8 +243,10 @@ safeListener(chrome.runtime, 'onMessage', (msg, sender, sendResponse) => {
       if (fromOffscreen) {
         if (msg.type === 'capture-ended') {
           // офскрин сам остановился (поток вкладки кончился / лимит времени)
+          const st = await getState();
           await setState({ capturing: false, stopReason: msg.info && msg.info.reason });
           await setBadge('');
+          if (st.tabId != null) tabsSend(st.tabId, { type: 'recording-stopped' });
           await maybeAutoSave();
           sendResponse({ ok: true });
         } else if (msg.type === 'download') {
@@ -344,6 +351,7 @@ async function status() {
     autoSave: prefs.autoSave,
     pageMeta: content.meta || null,
     playback: content.playback || null,
+    songPage: content.songPage !== false,
     hasAudio: !!content.hasAudio,
     hasContent: !!content.ok,
     tabId: activeTabId,
@@ -372,6 +380,7 @@ safeListener(chrome.tabCapture, 'onStatusChanged', async (info) => {
       await sendToOffscreen({ type: 'stop-recording' });
       await setState({ capturing: false, stopReason: 'capture-state-' + info.status });
       await setBadge('');
+      tabsSend(st.tabId, { type: 'recording-stopped' });
       await maybeAutoSave();
     }
   } catch (e) { /* ignore */ }

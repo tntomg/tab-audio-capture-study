@@ -20,6 +20,7 @@
 
 - 🔬 **A research report** on how music platforms store, deliver and protect audio — private object storage → HLS/CMAF packaging → SAMPLE-AES + Widevine/FairPlay → watermarking — **plus** a fully working MV3 extension that demonstrates what the browser's *own documented APIs* can and cannot see.
 - 🎙️ The extension records, in real time (1×), the audio a tab **already plays to the user**, through the public `chrome.tabCapture` API — the same capability class as OBS Studio or the Windows Game Bar. No DRM is touched: the tap sits **after** the CDM. No keys, no decryption, no protected streams.
+- 🎵 Two platform adapters are included — **Udio** and **Suno** — for metadata, cover art and player events only. The capture path itself is platform-agnostic.
 - 🕵️ Audio watermarking can attribute any recording to the playing account (report §6.2) — one reason this is a study vehicle, not a tool.
 
 It started accidentally: a DevTools window open next to a playing song, and a question that wouldn't go away.
@@ -27,7 +28,7 @@ It started accidentally: a DevTools window open next to a playing song, and a qu
 <details>
 <summary><b>📖 The full legal &amp; ethics note</b> — please read before using</summary>
 
-- **No DRM circumvention.** There is no key extraction, no decryption and no access to protected streams anywhere in this code. An early attempt to obtain decryption keys through public L3 CDMs failed outright; the report documents it as a negative result, and that experiment is deliberately not part of this repository.
+- **No DRM circumvention.** There is no key extraction, no decryption and no access to protected streams anywhere in this code. Suno's client-side "Mango" encryption is likewise never touched: no key requests, no decryption. An early attempt to obtain decryption keys through public L3 CDMs failed outright; the report documents it as a negative result, and that experiment is deliberately not part of this repository.
 - **Nothing is downloaded or scraped.** The extension records what the browser is already playing *to the user*. This is the well-known "analog hole", which platforms treat as an accepted, watermark-mitigated risk (report §6). Recording quality equals exactly what is audible; the process runs at 1× real time.
 - **Documented APIs only.** No exploits. The platform-specific content script (metadata, passive player events) analyzes publicly observable page architecture and never alters the page's audio path.
 - **Not affiliated** with, endorsed by, or connected to any platform or rights holder. All trademarks belong to their respective owners.
@@ -58,7 +59,8 @@ UI — английский по умолчанию, переключатель 
 cd extension/dev-tools
 node test_lame.js        # MP3 320 + ID3 → ffprobe-валидный файл
 node test_wav.js         # RIFF/WAVE + LIST INFO
-node test_regex.js       # парсер метаданных (синтетическая страница)
+node test_regex.js       # парсер метаданных Udio (синтетическая страница)
+node test_suno.js        # парсер SSR-данных Suno (self.__next_f, split-чанки)
 node smoke_test_sw.js    # service worker: топ-левел + полный цикл start/stop/save
 ```
 
@@ -98,6 +100,18 @@ The one decision that determines everything in a capture tool is *where in the s
 7. **lamejs in-page** (320 kbps CBR, 48 kHz stereo) yields a valid MP3; hand-built ID3v2.3 (UTF-16 frames, syncsafe sizes) and RIFF/WAVE + LIST INFO read back correctly in ffprobe. Codec code can be trusted separately from capture code — test the halves independently.
 
 </details>
+
+## 🧩 Platform adapters
+
+| | Udio | Suno |
+|---|---|---|
+| Metadata | Next.js flight data + same-origin `/api/songs` | SSR React Query state inside `self.__next_f.push([1,"…"])`; no API call |
+| Song page | any injected page | `/song/<uuid>`; elsewhere the popup asks to open a song |
+| Player | first `blob:` `<audio>` | `#active-audio-play` (`silent-audio` explicitly ignored) |
+| Cover | `image_path` | `image_large_url` / `image_url` (CloudFront, CORS `*`) |
+| End of song | stop + save | stop + hold **before** Suno auto-advances the queue |
+
+Both adapters are passive: listeners only, no WebAudio, no rerouting of the page's audio. Suno keeps one player element across SPA navigation, so the adapter selects it by `id` instead of DOM position. Autoplay policy is unchanged: `play()` triggered from an extension message may not count as user activation, so after “Record from start” the user may still need to press **Play** once — capture continues, and the file simply begins with silence until playback starts.
 
 ## 📦 Repository
 

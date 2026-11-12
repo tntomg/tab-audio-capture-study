@@ -1,4 +1,4 @@
-// popup.js — Udio Song Downloader v2 (UI, EN default + RU switch).
+// popup.js — Tab Audio Capture Study v2 (UI, EN default + RU switch).
 // All logic lives in the service worker; this file only renders status
 // and sends commands. UI language: 'en' by default, toggle persisted
 // in chrome.storage.local ('lang').
@@ -29,7 +29,7 @@ const STR = {
     silenceWarn: '\n⚠️ Silence so far — make sure the song is playing and sound is on.',
     ctxWarn: '\n⚠️ AudioContext: ',
     ready: '✅ Recording ready to save: ',
-    openSongPage: 'Open a song page on udio.com and start playback.',
+    openSongPage: 'Open a song page on Udio or Suno and start playback.',
     playerFound: 'Player found. "Record from start" will rewind,\nrecord to the end and save the file automatically.',
     playerPending: 'Page is open, but the player is not created yet.\nPress Play on the page.',
     rewindMsg: '↻ The track is being rewound to 0:00 and recorded.\nThe file will appear in Downloads when the song ends.',
@@ -62,7 +62,7 @@ const STR = {
     silenceWarn: '\n⚠️ Пока тишина — проверьте, что песня играет и звук не выключен.',
     ctxWarn: '\n⚠️ Аудиоконтекст: ',
     ready: '✅ Запись готова к сохранению: ',
-    openSongPage: 'Откройте страницу песни на udio.com и включите воспроизведение.',
+    openSongPage: 'Откройте страницу песни на Udio или Suno и включите воспроизведение.',
     playerFound: 'Плеер найден. «Записать с начала» — перемотает трек,\nзапишет до конца и сохранит файл автоматически.',
     playerPending: 'Страница открыта, но плеер ещё не создан.\nНажмите Play на странице.',
     rewindMsg: '↻ Трек перематывается на 0:00 и записывается.\nФайл появится в «Загрузках» по окончании песни.',
@@ -164,7 +164,7 @@ function render(st) {
   }
 
   dot.className = 'dot';
-  if (!st.hasContent) {
+  if (!st.hasContent || st.songPage === false) {
     status.textContent = L('openSongPage');
   } else if (st.hasAudio) {
     status.textContent = L('playerFound');
