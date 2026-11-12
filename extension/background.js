@@ -123,8 +123,17 @@ async function startRecording(tabId, mode) {
 
   if (mode === 'restart') {
     // 1) СНАЧАЛА глушим и перематываем на 0:00 — до старта захвата,
-    //    чтобы хвост прошлой позиции вообще не попал в запись
-    await tabsSend(tabId, { type: 'prepare-restart' });
+    //    чтобы хвост прошлой позиции вообще не попал в запись.
+    //    Без content script (например, вкладка открыта до обновления
+    //    расширения) перемотка и автостоп по 'ended' не работают —
+    //    честно сообщаем об ошибке, а не пишем «с текущего места».
+    const prep = await tabsSend(tabId, { type: 'prepare-restart' });
+    if (!prep || prep.ok !== true) {
+      const err = prep && prep.error === 'no-content' ? 'content-missing'
+        : (prep && prep.error) || 'prepare-failed';
+      console.warn('[udio-dl-sw] restart недоступен:', err);
+      return { ok: false, error: err };
+    }
   }
 
   // 2) getMediaStreamId вызывается по жесту (клик по иконке/кнопке popup) —

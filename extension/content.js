@@ -267,7 +267,12 @@
       }
     });
     el.addEventListener('ended', () => {
-      if (el !== mainEl) return;
+      // плеер мог быть пересоздан React'ом до вызова scan() — во время
+      // записи доверяем событию, если элемент похож на основной плеер
+      if (el !== mainEl) {
+        if (!(captureActive && isMainPlayer(el))) return;
+        mainEl = el;
+      }
       // Suno после 'ended' сам переключает очередь: если запись идёт,
       // hold ставим СРАЗУ — следующий трек не попадёт в хвост файла
       if (captureActive) holdUntil = Date.now() + HOLD_MS;
@@ -302,6 +307,9 @@
   // ---------- команды от service worker ----------
 
   async function prepareRestart() {
+    // явная команда «с начала» отменяет hold после предыдущего 'ended':
+    // иначе play() тут же глушится обработчиком play и трек не стартует
+    holdUntil = 0;
     const el = findMainAudio();
     if (!el) return { ok: false, error: 'no-audio' };
     // глушим и перематываем ДО старта захвата: хвост прошлой позиции
@@ -319,6 +327,7 @@
   }
 
   async function playNow() {
+    holdUntil = 0; // команда «с начала» главнее hold от прошлого 'ended'
     const el = findMainAudio();
     if (!el) return { ok: false, error: 'no-audio' };
     if (!el.paused) return { ok: true, playing: true };
@@ -328,7 +337,10 @@
     if (el.paused) {
       const btn = findPlayButton();
       if (btn) { try { btn.click(); } catch (e) { /* ignore */ } }
-      await new Promise((r) => setTimeout(r, 150));
+      // буферизация на Suno/облаке может занять секунду-другую
+      for (let i = 0; i < 12 && el.paused; i++) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
     }
     // если браузер всё равно требует жест — пользователь нажмёт Play сам;
     // запись при этом продолжится (просто будет тишина до старта)

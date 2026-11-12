@@ -35,6 +35,9 @@ const STR = {
     playerPending: 'Page is open, but the player is not created yet.\nPress Play on the page.',
     rewindMsg: '↻ The track is being rewound to 0:00 and recorded.\nThe file will appear in Downloads when the song ends.',
     startFail: 'Failed to start recording: ',
+    errContentMissing: 'The page script is not connected. Reload the tab (Ctrl+R) — the extension was updated or reloaded.',
+    errNoAudio: 'Player not found on the page. Start playback once, then try again.',
+    errPrepareFailed: 'Could not rewind the track. Reload the tab and try again.',
     encodingDots: '⏳ Encoding…',
     saved: '💾 Saved: ',
     seeDownloads: ' MB) — see browser Downloads.',
@@ -69,6 +72,9 @@ const STR = {
     playerPending: 'Страница открыта, но плеер ещё не создан.\nНажмите Play на странице.',
     rewindMsg: '↻ Трек перематывается на 0:00 и записывается.\nФайл появится в «Загрузках» по окончании песни.',
     startFail: 'Не удалось начать запись: ',
+    errContentMissing: 'Скрипт страницы не подключён. Обновите вкладку (Ctrl+R) — расширение было обновлено или перезагружено.',
+    errNoAudio: 'Плеер не найден на странице. Включите воспроизведение один раз и попробуйте снова.',
+    errPrepareFailed: 'Не удалось перемотать трек. Обновите вкладку и попробуйте снова.',
     encodingDots: '⏳ Кодирую…',
     saved: '💾 Сохранено: ',
     seeDownloads: ' МБ) — см. «Загрузки» браузера.',
@@ -110,6 +116,14 @@ function fmt(sec) {
   const m = Math.floor(sec / 60);
   const s = Math.round(sec % 60);
   return m + ':' + String(s).padStart(2, '0');
+}
+
+// технические коды background -> понятный текст
+function startErr(code) {
+  if (code === 'content-missing' || code === 'no-content') return L('errContentMissing');
+  if (code === 'no-audio') return L('errNoAudio');
+  if (code === 'prepare-failed') return L('errPrepareFailed');
+  return code || L('unknown');
 }
 
 function render(st) {
@@ -265,7 +279,7 @@ $('restart').addEventListener('click', async () => {
   } else {
     const status = $('status');
     status.className = 'status err';
-    status.textContent = L('startFail') + ((r && r.error) || L('unknown'));
+    status.textContent = L('startFail') + startErr(r && r.error);
   }
   await refresh();
 });
@@ -276,7 +290,7 @@ $('record').addEventListener('click', async () => {
   if (!(r && r.ok)) {
     const status = $('status');
     status.className = 'status err';
-    status.textContent = L('startFail') + ((r && r.error) || L('unknown'));
+    status.textContent = L('startFail') + startErr(r && r.error);
   }
   await refresh();
 });

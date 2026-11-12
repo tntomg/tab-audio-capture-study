@@ -63,6 +63,7 @@ node test_wav.js         # RIFF/WAVE + LIST INFO
 node test_regex.js       # парсер метаданных Udio (синтетическая страница)
 node test_suno.js        # парсер SSR-данных Suno (self.__next_f, split-чанки)
 node test_save_meta.js   # авто/ручное название: приоритет страницы vs popup
+node test_restart.js     # режим «с начала»: перемотка, play, hold после 'ended'
 node smoke_test_sw.js    # service worker: топ-левел + полный цикл start/stop/save
 ```
 
