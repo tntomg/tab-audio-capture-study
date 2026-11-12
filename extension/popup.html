@@ -51,6 +51,7 @@
     padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px;
     font: inherit; background: #fff;
   }
+  input[type=text][readonly] { background: #f3f4f6; color: #6b7280; }
   button {
     width: 100%; margin-top: 10px;
     padding: 9px 10px; border: 0; border-radius: 8px;
@@ -90,6 +91,11 @@
     </span>
   </h1>
   <div class="status" id="status" data-i18n="checking">Checking page…</div>
+
+  <div class="row" style="margin-top:0">
+    <input type="checkbox" id="autoTitle" checked>
+    <label for="autoTitle" style="margin:0" data-i18n="autoTitle">Track title from page (auto)</label>
+  </div>
 
   <label for="artist" data-i18n="artist">Artist</label>
   <input type="text" id="artist" placeholder="Artist">

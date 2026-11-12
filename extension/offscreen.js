@@ -37,6 +37,9 @@
   // (HLS-ребуферинг, пауза) в файл не пишется — песня сшивается бесшовно
   const STITCH_MIN_SILENCE = 1.5;
   const STITCH_LEVEL = 0.003;   // порог «звук есть» (пик блока)
+  // минимальная длина сохраняемой записи: короткие сэмплы (Suno, SFX) — норма,
+  // 0.5 с достаточно, чтобы отсечь случайный фрагмент от двойного старта
+  const MIN_SAVE_SECONDS = 0.5;
 
   const log = (...a) => console.log('[udio-dl-offscreen]', ...a);
 
@@ -173,15 +176,16 @@
     try { S.ctx && S.ctx.close(); } catch (e) { /* ignore */ }
     S.stream = S.ctx = S.node = S.source = null;
 
-    if (S.chunks.length && secs >= 5 && level > 0.002) {
+    if (S.chunks.length && secs >= MIN_SAVE_SECONDS && level > 0.002) {
       S.last = { chunks: S.chunks, seconds: secs, maxLevel: level, rate };
       log('запись завершена (' + reason + '):', secs.toFixed(1) + 'с, уровень ' +
         level.toFixed(3) + (S.droppedSec > 0.3
           ? ', заик/пауз вырезано: ' + S.droppedSec.toFixed(1) + 'с'
           : ''));
     } else {
-      // короткая/тихая запись не затирает предыдущую удачную
-      log('запись короткая/тихая — отброшена:', secs.toFixed(1) + 'с, уровень ' + level.toFixed(3));
+      // пустая/тихая запись не затирает предыдущую удачную
+      log('запись слишком короткая/тихая — отброшена:', secs.toFixed(1) +
+        'с, уровень ' + level.toFixed(3));
     }
     S.chunks = []; S.seconds = 0; S.maxLevel = 0;
     S.hasSound = false; S.silChunks = 0; S.stitching = false; S.droppedSec = 0;

@@ -22,10 +22,18 @@ async function setState(patch) {
 }
 
 async function getPrefs() {
-  const st = await chrome.storage.local.get(['format', 'autoSave']);
+  const st = await chrome.storage.local.get(['format', 'autoSave', 'autoTitle', 'manualMeta']);
+  const mm = st.manualMeta || {};
   return {
     format: st.format === 'wav' ? 'wav' : 'mp3',
     autoSave: st.autoSave !== false, // по умолчанию ВКЛ
+    autoTitle: st.autoTitle !== false, // по умолчанию ВКЛ: имя трека со страницы
+    // ручное название/автор, сохранённые popup (нужны автосейву,
+    // когда popup уже закрыт и opts.meta нет)
+    manualMeta: {
+      artist: String(mm.artist || '').trim(),
+      title: String(mm.title || '').trim(),
+    },
   };
 }
 
@@ -188,8 +196,21 @@ async function savePipeline(opts, auto) {
       }
     }
   }
-  if (opts && opts.meta && (opts.meta.artist || opts.meta.title)) {
-    meta = Object.assign({}, meta || {}, opts.meta);
+
+  // автор/название из popup: в авто-режиме главнее данные страницы,
+  // в ручном — то, что ввёл пользователь; пустые поля заполняются взаимно.
+  // Если popup закрыт (автосейв), в ручном режиме берём сохранённые значения.
+  const manual = (opts && opts.meta) ? {
+    artist: String(opts.meta.artist || '').trim(),
+    title: String(opts.meta.title || '').trim(),
+  } : prefs.manualMeta;
+  const manualPatch = {};
+  if (manual && manual.artist) manualPatch.artist = manual.artist;
+  if (manual && manual.title) manualPatch.title = manual.title;
+  if (manualPatch.artist || manualPatch.title) {
+    meta = prefs.autoTitle
+      ? Object.assign({}, manualPatch, meta || {})   // авто: страница перекрывает ручное
+      : Object.assign({}, meta || {}, manualPatch);  // вручную: ввод перекрывает страницу
   }
 
   if (!meta) meta = { artist: 'Tab', title: 'recording' };
@@ -307,6 +328,20 @@ safeListener(chrome.runtime, 'onMessage', (msg, sender, sendResponse) => {
           sendResponse({ ok: true, autoSave: !!msg.value });
           break;
         }
+        case 'setAutoTitle': {
+          await chrome.storage.local.set({ autoTitle: !!msg.value });
+          sendResponse({ ok: true, autoTitle: !!msg.value });
+          break;
+        }
+        case 'setManualMeta': {
+          const manualMeta = {
+            artist: String((msg.meta && msg.meta.artist) || '').trim(),
+            title: String((msg.meta && msg.meta.title) || '').trim(),
+          };
+          await chrome.storage.local.set({ manualMeta });
+          sendResponse({ ok: true, manualMeta });
+          break;
+        }
         default:
           sendResponse({ ok: false, error: 'unknown' });
       }
@@ -349,6 +384,7 @@ async function status() {
     last: off.last || null,
     format: prefs.format,
     autoSave: prefs.autoSave,
+    autoTitle: prefs.autoTitle,
     pageMeta: content.meta || null,
     playback: content.playback || null,
     songPage: content.songPage !== false,

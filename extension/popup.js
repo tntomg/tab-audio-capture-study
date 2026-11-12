@@ -18,6 +18,7 @@ const STR = {
     btnRecord: '● Record from current position',
     btnStop: '⏹ Stop recording',
     btnSave: '💾 Save last recording',
+    autoTitle: 'Track title from page (auto)',
     autoSave: 'Auto-save (current-position mode)',
     hint: 'Recording happens at the browser level (tabCapture): no DRM blocks, no crackle, speakers play as usual. Player hiccups/pauses longer than 1.5 s are cut from the file automatically. While recording, the tab is marked with a “recording” icon. Don\'t mute the player or close the tab.',
     statusFail: 'Failed to get status: ',
@@ -51,6 +52,7 @@ const STR = {
     btnRecord: '● Записать с текущего места',
     btnStop: '⏹ Остановить запись',
     btnSave: '💾 Сохранить последнюю запись',
+    autoTitle: 'Название трека со страницы (авто)',
     autoSave: 'Автосохранение «с текущего места»',
     hint: 'Запись — на уровне браузера (tabCapture): без DRM-блокировок, без треска, звук в колонках идёт как обычно. Заики/паузы плеера дольше 1,5 с вырезаются из файла автоматически. Во время записи вкладка помечается значком «запись». Не выключайте звук плеера и не закрывайте вкладку.',
     statusFail: 'Не удалось получить статус: ',
@@ -177,11 +179,21 @@ async function refresh() {
   const st = await send({ type: 'status' });
   lastStatus = st;
   if (st.ok) {
-    if (document.activeElement !== $('artist') && !$('artist').dataset.touched) {
+    if (!$('autoTitle').dataset.touched) $('autoTitle').checked = st.autoTitle !== false;
+    const autoTitle = st.autoTitle !== false;
+    $('artist').readOnly = autoTitle;
+    $('title').readOnly = autoTitle;
+    if (autoTitle) {
+      // авто-режим: поля всегда показывают имя трека, распарсенное из HTML страницы
       $('artist').value = (st.pageMeta && st.pageMeta.artist) || '';
-    }
-    if (document.activeElement !== $('title') && !$('title').dataset.touched) {
       $('title').value = (st.pageMeta && st.pageMeta.title) || '';
+    } else {
+      if (document.activeElement !== $('artist') && !$('artist').dataset.touched) {
+        $('artist').value = (st.pageMeta && st.pageMeta.artist) || '';
+      }
+      if (document.activeElement !== $('title') && !$('title').dataset.touched) {
+        $('title').value = (st.pageMeta && st.pageMeta.title) || '';
+      }
     }
     if (!$('autoSave').dataset.touched) $('autoSave').checked = !!st.autoSave;
     tabId = st.tabId != null ? st.tabId : tabId;
@@ -205,8 +217,41 @@ async function init() {
 $('langEn').addEventListener('click', () => setLang('en'));
 $('langRu').addEventListener('click', () => setLang('ru'));
 
-$('artist').addEventListener('input', () => { $('artist').dataset.touched = '1'; });
-$('title').addEventListener('input', () => { $('title').dataset.touched = '1'; });
+// ручные значения переживают закрытие popup — их использует автосейв
+let manualMetaTimer = null;
+function persistManualMeta() {
+  clearTimeout(manualMetaTimer);
+  manualMetaTimer = setTimeout(() => {
+    send({
+      type: 'setManualMeta',
+      meta: { artist: $('artist').value, title: $('title').value },
+    });
+  }, 400);
+}
+
+$('artist').addEventListener('input', () => {
+  $('artist').dataset.touched = '1';
+  persistManualMeta();
+});
+$('title').addEventListener('input', () => {
+  $('title').dataset.touched = '1';
+  persistManualMeta();
+});
+
+// авто/ручное название: в авто-режиме берём title/artist из HTML страницы
+// (свежий parse при каждом сохранении), в ручном — то, что ввёл пользователь
+$('autoTitle').addEventListener('change', async (e) => {
+  e.target.dataset.touched = '1';
+  const auto = e.target.checked;
+  $('artist').readOnly = auto;
+  $('title').readOnly = auto;
+  if (auto) {
+    delete $('artist').dataset.touched;
+    delete $('title').dataset.touched;
+  }
+  await send({ type: 'setAutoTitle', value: auto });
+  await refresh();
+});
 
 // старт записи — клик по кнопке popup считается жестом пользователя
 // (требование chrome.tabCapture). Popup НЕ закрываем, чтобы видеть статус.

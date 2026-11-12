@@ -50,6 +50,7 @@ git clone https://github.com/tntomg/tab-audio-capture-study.git
 3. Открыть popup расширения на любой странице со звуком
 
 UI — английский по умолчанию, переключатель **EN/RU** в заголовке (выбор запоминается).
+Название трека и исполнитель подставляются автоматически из HTML-метаданных страницы (SSR-данные Suno / flight-данные Udio) — и в имя файла, и в теги ID3/WAV. Переключатель **«Название трека со страницы (авто)»** снимается для ручного ввода.
 Диагностика в консоли — префиксы `[udio-dl-*]` (service worker / offscreen / content script).
 
 <details>
@@ -61,6 +62,7 @@ node test_lame.js        # MP3 320 + ID3 → ffprobe-валидный файл
 node test_wav.js         # RIFF/WAVE + LIST INFO
 node test_regex.js       # парсер метаданных Udio (синтетическая страница)
 node test_suno.js        # парсер SSR-данных Suno (self.__next_f, split-чанки)
+node test_save_meta.js   # авто/ручное название: приоритет страницы vs popup
 node smoke_test_sw.js    # service worker: топ-левел + полный цикл start/stop/save
 ```
 
