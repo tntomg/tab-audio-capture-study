@@ -30,7 +30,7 @@ const STR = {
     silenceWarn: '\n⚠️ Silence so far — make sure the song is playing and sound is on.',
     ctxWarn: '\n⚠️ AudioContext: ',
     ready: '✅ Recording ready to save: ',
-    openSongPage: 'Open a song page on Udio or Suno and start playback.',
+    openSongPage: 'Open a song page on Udio, Suno or ACE Music and start playback.',
     playerFound: 'Player found. "Record from start" will rewind,\nrecord to the end and save the file automatically.',
     playerPending: 'Page is open, but the player is not created yet.\nPress Play on the page.',
     rewindMsg: '↻ The track is being rewound to 0:00 and recorded.\nThe file will appear in Downloads when the song ends.',
@@ -67,7 +67,7 @@ const STR = {
     silenceWarn: '\n⚠️ Пока тишина — проверьте, что песня играет и звук не выключен.',
     ctxWarn: '\n⚠️ Аудиоконтекст: ',
     ready: '✅ Запись готова к сохранению: ',
-    openSongPage: 'Откройте страницу песни на Udio или Suno и включите воспроизведение.',
+    openSongPage: 'Откройте страницу песни на Udio, Suno или ACE Music и включите воспроизведение.',
     playerFound: 'Плеер найден. «Записать с начала» — перемотает трек,\nзапишет до конца и сохранит файл автоматически.',
     playerPending: 'Страница открыта, но плеер ещё не создан.\nНажмите Play на странице.',
     rewindMsg: '↻ Трек перематывается на 0:00 и записывается.\nФайл появится в «Загрузках» по окончании песни.',
@@ -105,7 +105,10 @@ const $ = (id) => document.getElementById(id);
 
 function send(msg) {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage(msg, (resp) => {
+    // from:'popup' — явный маркер источника: popup, открытый как вкладка
+    // (тесты/диагностика), имеет sender.tab и без маркера ошибочно
+    // классифицируется сервис-воркером как контент-скрипт
+    chrome.runtime.sendMessage(Object.assign({ from: 'popup' }, msg), (resp) => {
       if (chrome.runtime.lastError) resolve({ ok: false, error: chrome.runtime.lastError.message });
       else resolve(resp || { ok: false, error: 'empty' });
     });

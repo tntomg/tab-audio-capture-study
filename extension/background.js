@@ -129,7 +129,7 @@ function metaScore(m) {
   let s = 0;
   if (m.parsed) s += 4;
   if (m.title && !/^(song|recording)$/i.test(m.title)) s += 2;
-  if (m.artist && !/^(tab|udio|suno)$/i.test(m.artist)) s += 1;
+  if (m.artist && !/^(tab|udio|suno|ace music)$/i.test(m.artist)) s += 1;
   if (m.uuid) s += 1;
   return s;
 }
@@ -323,7 +323,11 @@ safeListener(chrome.runtime, 'onMessage', (msg, sender, sendResponse) => {
   (async () => {
     try {
       const fromOffscreen = msg && msg.from === 'offscreen';
-      const fromContent = !!(sender.tab && sender.tab.id != null) && !fromOffscreen;
+      const fromPopup = msg && msg.from === 'popup';
+      // popup, открытый как вкладка (тесты/диагностика), тоже имеет sender.tab —
+      // поэтому источник различаем явным маркером, а не только по sender.tab
+      const fromContent = !fromOffscreen && !fromPopup &&
+        !!(sender.tab && sender.tab.id != null);
 
       if (fromOffscreen) {
         if (msg.type === 'capture-ended') {
@@ -491,6 +495,22 @@ safeListener(chrome.tabCapture, 'onStatusChanged', async (info) => {
       await maybeAutoSave();
     }
   } catch (e) { /* ignore */ }
+});
+
+// ---------- горячая клавиша ----------
+// Ctrl+Shift+9 (команда record-from-start из manifest): «Записать с начала»
+// без открытия popup. Нажатие клавиши — жест пользователя, дающий tabCapture
+// invocation для активной вкладки (документированный путь activeTab).
+safeListener(chrome.commands, 'onCommand', async (cmd) => {
+  try {
+    if (cmd !== 'record-from-start') return;
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tabs.length) return;
+    const r = await startRecording(tabs[0].id, 'restart');
+    console.log('[udio-dl-sw] запись по горячей клавише:', JSON.stringify(r));
+  } catch (e) {
+    console.warn('[udio-dl-sw] команда:', e && e.message);
+  }
 });
 
 safeListener(chrome.tabs, 'onRemoved', async (tabId) => {

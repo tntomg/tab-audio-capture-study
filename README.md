@@ -20,7 +20,7 @@
 
 - 🔬 **A research report** on how music platforms store, deliver and protect audio — private object storage → HLS/CMAF packaging → SAMPLE-AES + Widevine/FairPlay → watermarking — **plus** a fully working MV3 extension that demonstrates what the browser's *own documented APIs* can and cannot see.
 - 🎙️ The extension records, in real time (1×), the audio a tab **already plays to the user**, through the public `chrome.tabCapture` API — the same capability class as OBS Studio or the Windows Game Bar. No DRM is touched: the tap sits **after** the CDM. No keys, no decryption, no protected streams.
-- 🎵 Two platform adapters are included — **Udio** and **Suno** — for metadata, cover art and player events only. The capture path itself is platform-agnostic.
+- 🎵 Three platform adapters are included — **Udio**, **Suno** and **ACE Music** — for metadata, cover art and player events only. The capture path itself is platform-agnostic.
 - 🕵️ Audio watermarking can attribute any recording to the playing account (report §6.2) — one reason this is a study vehicle, not a tool.
 
 It started accidentally: a DevTools window open next to a playing song, and a question that wouldn't go away.
@@ -47,10 +47,10 @@ git clone https://github.com/tntomg/tab-audio-capture-study.git
 
 1. `chrome://extensions` (или `edge://extensions`) → включить **Developer mode**
 2. **Load unpacked** → выбрать папку `extension/`
-3. Открыть popup расширения на любой странице со звуком
+3. Открыть popup расширения на любой странице со звуком. Горячая клавиша **Ctrl+Shift+9** — «Записать с начала» без открытия popup (клавиша даёт `tabCapture` invocation для активной вкладки).
 
 UI — английский по умолчанию, переключатель **EN/RU** в заголовке (выбор запоминается).
-Название трека и исполнитель подставляются автоматически и попадают в имя файла (`Исполнитель - Название.mp3`) и в теги ID3/WAV. Источники: Media Session («что играет сейчас»), SSR-данные Suno / flight-данные Udio. Снимок метаданных делается **на старте записи** и хранится в `chrome.storage.session`, поэтому автосохранение после `ended` не теряет название, даже если Suno уже переключил очередь на следующий трек или вкладка перезагрузилась. Переключатель **«Название трека со страницы (авто)»** снимается для ручного ввода.
+Название трека и исполнитель подставляются автоматически и попадают в имя файла (`Исполнитель - Название.mp3`) и в теги ID3/WAV. Источники: Media Session («что играет сейчас»), SSR-данные Suno / flight-данные Udio, DOM-карточка играющего плеера ACE Music (серверный рендер без flight-данных; Media Session главнее). Снимок метаданных делается **на старте записи** и хранится в `chrome.storage.session`, поэтому автосохранение после `ended` не теряет название, даже если Suno уже переключил очередь на следующий трек или вкладка перезагрузилась. Переключатель **«Название трека со страницы (авто)»** снимается для ручного ввода.
 Диагностика в консоли — префиксы `[udio-dl-*]` (service worker / offscreen / content script).
 
 <details>
@@ -64,7 +64,14 @@ node test_regex.js       # парсер метаданных Udio (синтет�
 node test_suno.js        # парсер SSR-данных Suno (self.__next_f, split-чанки)
 node test_save_meta.js   # авто/ручное название + снимок со старта записи (следующий трек / content script недоступен)
 node test_restart.js     # режим «с начала»: перемотка, play, hold после 'ended', Media Session
+node test_acemusic.js    # адаптер ACE Music: DOM-карточка, Media Session, hold, status
 node smoke_test_sw.js    # service worker: топ-левел + полный цикл start/stop/save
+```
+
+E2E в реальном браузере (записывает демо-трек acemusic.ai и проверяет MP3 через ffprobe; перед звуком глушит вывод ОС и возвращает после):
+
+```bash
+py -3.10 scripts/e2e_acemusic.py
 ```
 
 </details>
@@ -106,15 +113,15 @@ The one decision that determines everything in a capture tool is *where in the s
 
 ## 🧩 Platform adapters
 
-| | Udio | Suno |
-|---|---|---|
-| Metadata | Next.js flight data + same-origin `/api/songs` | SSR React Query state inside `self.__next_f.push([1,"…"])`; no API call |
-| Song page | any injected page | `/song/<uuid>`; elsewhere the popup asks to open a song |
-| Player | first `blob:` `<audio>` | `#active-audio-play` (`silent-audio` explicitly ignored) |
-| Cover | `image_path` | `image_large_url` / `image_url` (CloudFront, CORS `*`) |
-| End of song | stop + save | stop + hold **before** Suno auto-advances the queue |
+| | Udio | Suno | ACE Music |
+|---|---|---|---|
+| Metadata | Next.js flight data + same-origin `/api/songs` | SSR React Query state inside `self.__next_f.push([1,\"…\"])`; no API call | Media Session + заголовок DOM-карточки играющего плеера (SSR без flight-данных) |
+| Song page | any injected page | `/song/<uuid>`; elsewhere the popup asks to open a song | любая страница с плеером (карточки демо, очередь) |
+| Player | first `blob:` `<audio>` | `#active-audio-play` (`silent-audio` explicitly ignored) | играющий `<audio>` (обычный https-MP3); «липнет» к последнему игравшему |
+| Cover | `image_path` | `image_large_url` / `image_url` (CloudFront, CORS `*`) | из Media Session, если площадка выставит |
+| End of song | stop + save | stop + hold **before** Suno auto-advances the queue | stop + save |
 
-Both adapters are passive: listeners only, no WebAudio, no rerouting of the page's audio. Suno keeps one player element across SPA navigation, so the adapter selects it by `id` instead of DOM position. Autoplay policy is unchanged: `play()` triggered from an extension message may not count as user activation, so after “Record from start” the user may still need to press **Play** once — capture continues, and the file simply begins with silence until playback starts.
+All adapters are passive: listeners only, no WebAudio, no rerouting of the page's audio. Suno keeps one player element across SPA navigation, so the adapter selects it by `id` instead of DOM position. On ACE Music several players can coexist on one page (demo cards, queue), so the adapter picks the currently playing one and remembers the last played element; play buttons (`Play: …`) are resolved within the same card as the player. Autoplay policy is unchanged: `play()` triggered from an extension message may not count as user activation, so after “Record from start” the user may still need to press **Play** once — capture continues, and the file simply begins with silence until playback starts.
 
 ## 📦 Repository
 

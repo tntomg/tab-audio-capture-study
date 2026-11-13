@@ -1,9 +1,12 @@
 // content.js — Tab Audio Capture Study: ПАССИВНЫЙ наблюдатель.
 //
-// Платформы: Udio и Suno. У обеих звук играет через blob:-src (MSE/Blob), а
-// метаданные песни уже присутствуют в HTML (Next.js flight data). Suno отдаёт
-// их в self.__next_f без дополнительных запросов; Udio — в script-блоках плюс
-// same-origin /api/songs.
+// Платформы: Udio, Suno и ACE Music. У Udio/Suno звук играет через blob:-src
+// (MSE/Blob), а метаданные песни уже присутствуют в HTML (Next.js flight
+// data): Suno отдаёт их в self.__next_f без дополнительных запросов; Udio —
+// в script-блоках плюс same-origin /api/songs. ACE Music — серверный рендер
+// без flight-данных: звук играет обычными <audio> (https-MP3), метаданные
+// берём из Media Session и DOM-карточки играющего плеера, запасной вариант —
+// document.title.
 //
 // В v1 этот скрипт перехватывал звук через createMediaElementSource + ScriptProcessorNode
 // в главном потоке страницы: это (а) перенаправляло звук плеера в контекст расширения
@@ -24,10 +27,13 @@
 
   function detectSite() {
     const h = location.hostname;
+    if (/(^|\.)acemusic\.ai$/i.test(h)) return 'acemusic';
     if (/(^|\.)suno\.com$/i.test(h)) return 'suno';
     if (/(^|\.)udio\.com$/i.test(h)) return 'udio';
     return null;
   }
+
+  const SITE_NAMES = { suno: 'Suno', udio: 'Udio', acemusic: 'ACE Music' };
 
   // ---------- метаданные страницы ----------
 
@@ -156,6 +162,23 @@
     return meta;
   }
 
+  // ACE Music: SSR-flight-данных нет, API требует авторизацию. Название —
+  // из карточки, в которой живёт играющий <audio> (ближайший заголовок
+  // h1-h4 вверх по дереву). Media Session (см. getPageTrackMeta) главнее:
+  // здесь только то, что можно вытащить из DOM без запросов.
+  function parseAceMeta() {
+    const el = findMainAudio();
+    if (!el) return null;
+    let node = el.parentElement;
+    while (node && node !== document.body) {
+      const h = node.querySelector('h1,h2,h3,h4');
+      const t = h && h.textContent && h.textContent.trim();
+      if (t) return { site: 'ACE Music', artist: 'ACE Music', title: t, parsed: true };
+      node = node.parentElement;
+    }
+    return null;
+  }
+
   // Самый надёжный источник «что играет прямо сейчас» — Media Session:
   // платформы выставляют его для системных медиа-контролов. Он не зависит
   // от SSR-разметки и от того, осталась ли страница на /song/<uuid>.
@@ -166,7 +189,7 @@
       if (!md || !md.title) return null;
       const art = md.artwork && md.artwork.length ? md.artwork[md.artwork.length - 1] : null;
       return {
-        site: site === 'suno' ? 'Suno' : site === 'udio' ? 'Udio' : 'Tab',
+        site: SITE_NAMES[site] || 'Tab',
         artist: md.artist || '',
         title: md.title,
         image: (art && art.src) || null,
@@ -177,7 +200,15 @@
 
   function fallbackMeta(site) {
     // У Suno заголовок вида "<Song> by <Artist> | Suno";
-    // у Udio — "<Artist> - <Song>".
+    // у Udio — "<Artist> - <Song>"; у ACE Music — "<Song> | ACE Music"
+    // или "ACE Music — <описание страницы>".
+    if (site === 'acemusic') {
+      const t = (document.title || '')
+        .replace(/\s*\|\s*ACE Music\s*$/i, '')
+        .replace(/^ACE Music\s*[—–-]\s*/i, '')
+        .trim();
+      return { site: 'ACE Music', artist: 'ACE Music', title: t || 'song' };
+    }
     const t = (document.title || '').replace(/\s*\|\s*(?:Udio|Suno)\s*$/i, '').trim();
     if (site === 'suno') {
       const by = t.lastIndexOf(' by ');
@@ -203,12 +234,16 @@
     const site = detectSite();
     // SSR-данные кэшируем по URL: при SPA-переходе Suno они относятся уже
     // к другой странице, а запасной вариант из document.title не кэшируем.
-    let page = metaCache.url === url ? metaCache.data : null;
+    // ACE Music не кэшируем вовсе: метаданные там зависят от того, КАКОЙ
+    // плеер сейчас играет, а не от URL.
+    let page = (site !== 'acemusic' && metaCache.url === url) ? metaCache.data : null;
     if (!page) {
       try {
-        page = site === 'suno' ? parseSunoMeta() : await parseUdioMeta();
+        page = site === 'suno' ? parseSunoMeta()
+          : site === 'acemusic' ? parseAceMeta()
+          : await parseUdioMeta();
       } catch (e) { log('метаданные:', e && e.message); }
-      if (page && page.parsed) {
+      if (site !== 'acemusic' && page && page.parsed) {
         metaCache.url = url;
         metaCache.data = page;
       }
@@ -267,19 +302,40 @@
 
   function isMainPlayer(el) {
     if (!el || isSilentAudio(el)) return false;
-    if (detectSite() === 'suno' && el.id === SUNO_ACTIVE_ID) return true;
-    // основной плеер обеих платформ играет через MSE/Blob => blob:-src
+    const site = detectSite();
+    if (site === 'suno' && el.id === SUNO_ACTIVE_ID) return true;
+    if (site === 'acemusic') {
+      // у ACE Music нет blob:-src: основной плеер — элемент, который играет
+      // или уже проиграл что-то похожее на трек
+      return !el.paused || (isFinite(el.duration) && el.duration > 1);
+    }
+    // основной плеер Udio/Suno играет через MSE/Blob => blob:-src
     return (el.currentSrc || el.src || '').startsWith('blob:');
   }
 
   function findMainAudio() {
-    if (detectSite() === 'suno') {
+    const site = detectSite();
+    if (site === 'suno') {
       // на Suno плеер устойчиво живёт в #active-audio-play и переживает
       // SPA-навигацию; silent-audio игнорируем
       const active = document.getElementById(SUNO_ACTIVE_ID);
       if (active && !isSilentAudio(active)) return active;
     }
     const els = Array.from(document.querySelectorAll('audio'));
+    if (site === 'acemusic') {
+      // на странице может быть несколько плееров (карточки демо, очередь):
+      // главный — играющий; иначе залипаем на последнем игравшем; иначе
+      // самый длинный; и только потом первый попавшийся
+      const clean = els.filter((a) => !isSilentAudio(a));
+      const playing = clean.find((a) => !a.paused);
+      if (playing) return playing;
+      if (mainEl && mainEl.isConnected) return mainEl;
+      const withDur = clean.filter((a) => isFinite(a.duration) && a.duration > 1);
+      if (withDur.length) {
+        return withDur.reduce((a, b) => (b.duration > a.duration ? b : a));
+      }
+      return clean[0] || null;
+    }
     return els.find(isMainPlayer) || els.find((a) => !isSilentAudio(a)) || null;
   }
 
@@ -362,6 +418,16 @@
   }
 
   function findPlayButton() {
+    // ACE Music: у каждой карточки своя кнопка «Play: <описание>» — берём
+    // ту, что живёт в одном поддереве с основным плеером
+    if (detectSite() === 'acemusic' && mainEl) {
+      let node = mainEl.parentElement;
+      while (node && node !== document.body) {
+        const btn = node.querySelector("button[aria-label^='Play' i]");
+        if (btn) return btn;
+        node = node.parentElement;
+      }
+    }
     // Suno: кнопка Play в плеере имеет ровно aria-label="Play" и меняет его
     // на "Pause"; у Udio — тоже подпись со словом Play.
     return document.querySelector('button[aria-label="Play" i]') ||
@@ -456,5 +522,5 @@
     return true; // асинхронный ответ
   });
 
-  log('контент-скрипт загружен (v2, пассивный режим, Udio/Suno)');
+  log('контент-скрипт загружен (v2, пассивный режим, Udio/Suno/ACE Music)');
 })();

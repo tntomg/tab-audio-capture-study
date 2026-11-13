@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Tab Audio Capture Study",
-  "version": "2.2.2",
+  "version": "2.3.0",
   "minimum_chrome_version": "116",
-  "description": "Educational PoC: records a tab's audio via the documented chrome.tabCapture API and encodes it in-browser (MP3/WAV, ID3 tags). Udio/Suno adapters for metadata and player events; no DRM circumvention. UI: English/Russian.",
+  "description": "Educational PoC: records a tab's audio via the documented chrome.tabCapture API and encodes it in-browser (MP3/WAV, ID3 tags). Udio/Suno/ACE Music adapters for metadata and player events; no DRM circumvention. UI: English/Russian.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -17,13 +17,21 @@
     "service_worker": "background.js"
   },
   "permissions": ["tabCapture", "offscreen", "downloads", "storage", "activeTab"],
+  "commands": {
+    "record-from-start": {
+      "suggested_key": { "default": "Ctrl+Shift+9" },
+      "description": "Record the current tab's song from the start"
+    }
+  },
   "content_scripts": [
     {
       "matches": [
         "https://www.udio.com/*",
         "https://udio.com/*",
         "https://suno.com/*",
-        "https://www.suno.com/*"
+        "https://www.suno.com/*",
+        "https://acemusic.ai/*",
+        "https://www.acemusic.ai/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle",
