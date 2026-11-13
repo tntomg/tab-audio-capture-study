@@ -439,6 +439,14 @@
     const el = findMainAudio();
     if (!el) return { ok: false, error: 'no-audio' };
     if (!el.paused) return { ok: true, playing: true };
+    // Страница могла оставить volume=0 после паузы (fade-out плеера или
+    // ручной слайдер): тогда tabCapture запишет тишину — запись «не работает»
+    // при живом файле. Ровный ноль поднимаем до 1; громкость пользователя
+    // выше нуля не трогаем.
+    if (el.volume < 0.01) {
+      try { el.volume = 1; } catch (e) { /* ignore */ }
+      log('volume=0 восстановлен: иначе запись была бы тишиной');
+    }
     // сначала пробуем напрямую: синтетический click из сообщения расширения
     // не даёт user activation, поэтому порядок «play() -> клик» надёжнее
     try { await el.play(); } catch (e) { log('play() отклонён:', e && e.name); }

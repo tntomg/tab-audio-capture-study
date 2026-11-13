@@ -222,7 +222,10 @@ async function refresh() {
       }
     }
     if (!$('autoSave').dataset.touched) $('autoSave').checked = !!st.autoSave;
-    tabId = st.tabId != null ? st.tabId : tabId;
+    // НЕ перезаписываем tabId значением из статуса: st.tabId — это вкладка
+    // последней записи, а не та, где стоит наводить новую запись. После
+    // записи на Suno popup, открытый на Ace Music, «записывал» старую
+    // вкладку Suno. Наша цель — активная вкладка на момент открытия popup.
   }
   render(st);
 }

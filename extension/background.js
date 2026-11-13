@@ -437,7 +437,11 @@ async function status() {
   }
 
   let content = { ok: false };
-  let activeTabId = st.tabId;
+  // st.tabId — вкладка ПОСЛЕДНЕЙ записи; после её остановки пользователь уже
+  // мог перейти на другую вкладку. Актуальную активную вкладку спрашиваем
+  // у браузера; st.tabId используем только пока идёт захват — popup должен
+  // слать статус о записываемой вкладке, даже если она не в фокусе.
+  let activeTabId = st.capturing ? st.tabId : null;
   if (activeTabId == null) {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     activeTabId = tabs[0] ? tabs[0].id : null;

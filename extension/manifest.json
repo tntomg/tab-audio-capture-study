@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tab Audio Capture Study",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "minimum_chrome_version": "116",
   "description": "Educational PoC: records a tab's audio via the documented chrome.tabCapture API and encodes it in-browser (MP3/WAV, ID3 tags). Udio/Suno/ACE Music adapters for metadata and player events; no DRM circumvention. UI: English/Russian.",
   "icons": {

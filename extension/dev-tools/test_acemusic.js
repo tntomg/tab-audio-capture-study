@@ -16,6 +16,7 @@ class FakeAudio {
     this.listeners = {};
     this.paused = true;
     this.currentTime = 42;
+    this.volume = 1;
     this.currentSrc = 'https://web-resource-cdn.acemusic.ai/site/audio/demo-song.mp3';
     this.src = '';
     this.duration = 180;
@@ -169,6 +170,13 @@ function check(name, ok, detail) {
   check('play-now: воспроизведение запущено', play && play.playing === true,
     JSON.stringify(play));
   check('play-now: элемент не на паузе', audio.paused === false);
+  // на acemusic.ai/create страница после паузы оставляет volume=0:
+  // play-now должен поднять его, иначе tabCapture запишет тишину
+  audio.pause();
+  audio.volume = 0;
+  const playVol = await route({ type: 'play-now' });
+  check('play-now: volume=0 поднят до 1 (иначе тишина в записи)',
+    playVol && audio.volume === 1, String(audio.volume));
 
   // 7) status
   await route({ type: 'recording-stopped' });
